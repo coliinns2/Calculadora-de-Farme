@@ -561,7 +561,7 @@ async function generateReport(channel = null, teste = false) {
     rankingMessageId = rankingMsg.id;
     rankingTimestamp = Date.now();
 
-    const congratsChannel = await client.channels.fetch("1392555751351914517").catch(() => null);
+    const congratsChannel = await client.channels.fetch("1360720462518157514").catch(() => null);
     if (congratsChannel && rankingArr.length > 0) {
         const first = rankingArr[0];
         if (first.id !== lastFirstPlaceId) {
@@ -574,7 +574,7 @@ async function generateReport(channel = null, teste = false) {
             if (user) {
                 const congratsEmbed = new EmbedBuilder()
                     .setTitle("<:medal261:1410341499031257313> NOVO LÍDER NO RANKING DE VALORES!")
-                    .setDescription(`<a:confetiss:1410158284001771530> Parabéns! <@${first.id}> **conquistou o primeiro lugar** no ranking de valores da comunidade, **${formatValue(first.total)}.** <a:moneybag:1405178051935076392>`)
+                    .setDescription(`<a:confetiss:1410158284001771530> **Parabéns!** <@${first.id}> **conquistou o primeiro lugar** no ranking de valores da comunidade, **${formatValue(first.total)}.** <a:moneybag:1405178051935076392>`)
                     .setColor("#FFEC00")
                     .setThumbnail(user.displayAvatarURL({ dynamic: true }));
 
@@ -618,7 +618,7 @@ client.on('ready', () => {
 });
 
 // --- Cron job: apagar relatórios semanais todo domingo às 13h15 ---
-cron.schedule('15 16 * * 0', async () => {
+cron.schedule('0 8 * * 0', async () => {
     const reportChannel = await client.channels.fetch(REPORT_CHANNEL_ID).catch(() => null);
     if (!reportChannel) return;
 
@@ -661,6 +661,7 @@ app.listen(PORT, () => {
 });
 
 client.login(DISCORD_TOKEN);
+
 
 
 
