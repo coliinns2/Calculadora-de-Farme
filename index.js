@@ -633,7 +633,7 @@ client.on('ready', () => {
 });
 
 // --- Cron job: apagar relatórios semanais todo domingo às 19h ---
-cron.schedule('30 11 * * 0', async () => {
+cron.schedule('53 11 * * 0', async () => {
     const reportChannel = await client.channels.fetch(REPORT_CHANNEL_ID).catch(() => null);
     if (!reportChannel) return;
 
@@ -678,5 +678,6 @@ app.listen(PORT, () => {
 
 // --- Faz login do bot no Discord ---
 client.login(DISCORD_TOKEN);
+
 
 
