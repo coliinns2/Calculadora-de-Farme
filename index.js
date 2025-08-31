@@ -663,6 +663,20 @@ cron.schedule('0 0 * * *', async () => { // verifica diariamente à  meia-noite
     }
 });
 
+// --- Servidor HTTP para UptimeRobot ---
+const express = require('express');
+const app = express();
+const PORT = process.env.PORT || 3000;
 
+app.get('/', (req, res) => {
+    res.send('Bot ativo ✅');
+});
+
+app.listen(PORT, () => {
+    console.log(`🌐 Servidor de uptime rodando na porta ${PORT}`);
+});
+
+// --- Faz login do bot no Discord ---
 client.login(DISCORD_TOKEN);
+
 
