@@ -633,7 +633,7 @@ client.on('ready', () => {
 });
 
 // --- Cron job: apagar relatórios semanais todo domingo às 19h ---
-cron.schedule('15 11 * * 0', async () => {
+cron.schedule('19 11 * * 0', async () => {
     const reportChannel = await client.channels.fetch(REPORT_CHANNEL_ID).catch(() => null);
     if (!reportChannel) return;
 
@@ -662,5 +662,6 @@ cron.schedule('0 0 * * *', async () => { // verifica diariamente à  meia-noite
         console.log('🗑️ Ranking antigo apagado após 2 meses.');
     }
 });
+
 
 client.login(DISCORD_TOKEN);
