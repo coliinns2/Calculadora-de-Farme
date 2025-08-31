@@ -28,7 +28,7 @@ const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const FARM_CHANNEL_ID = '1377721036044505098';
 const REPORT_CHANNEL_ID = '1411691552274645112'
 
-// Função utilitária para normalizar textos (sem acentos, sem pontuação, maiúsculas)
+// === Funções utilitárias e inicialização ===
 function normalizeText(text) {
     if (!text || typeof text !== 'string') return '';
     return text
@@ -39,7 +39,6 @@ function normalizeText(text) {
         .trim();
 }
 
-// === Mapa de golpes para cargos ===
 const golpeCargoMap = {
     [normalizeText("CAYO PERICO")]: "1408190721847988275",
     [normalizeText("CASSINO")]: "1408211090612944906",
@@ -52,30 +51,59 @@ const golpeCargoMap = {
     [normalizeText("VICENT")]: "1408211381622280242"
 };
 
-// Armazena IDs das mensagens de relatório por usuário e ranking
-let userReportMessages = {};
+let farmData = {};
+let userReportMessages = {}; // Armazena IDs das mensagens de relatório por usuário
 let rankingMessageId = null;
 let rankingTimestamp = null;
+let lastFirstPlaceId = null;
+let lastCongratsMsgId = null;
 
-let farmData = {};
-if (fs.existsSync('./farmData.json')) {
-    try {
-        farmData = JSON.parse(fs.readFileSync('./farmData.json', 'utf-8'));
-        farmData.monthly = farmData.monthly || {};
-        farmData.total = farmData.total || {};
-    } catch (e) {
-        console.error('Erro ao ler farmData.json â€” resetando para padrÃ£o.', e);
+// Modificado para carregar dados persistentes, incluindo IDs de mensagens
+function loadData() {
+    if (fs.existsSync('./farmData.json')) {
+        try {
+            const data = JSON.parse(fs.readFileSync('./farmData.json', 'utf-8'));
+            farmData = data.farmData || { monthly: {}, total: {} };
+            userReportMessages = data.userReportMessages || {};
+            rankingMessageId = data.rankingMessageId || null;
+            rankingTimestamp = data.rankingTimestamp || null;
+            lastFirstPlaceId = data.lastFirstPlaceId || null;
+            lastCongratsMsgId = data.lastCongratsMsgId || null;
+        } catch (e) {
+            console.error('Erro ao ler farmData.json — resetando para padrão.', e);
+            farmData = { monthly: {}, total: {} };
+            userReportMessages = {};
+            rankingMessageId = null;
+            rankingTimestamp = null;
+            lastFirstPlaceId = null;
+            lastCongratsMsgId = null;
+        }
+    } else {
         farmData = { monthly: {}, total: {} };
-        fs.writeFileSync('./farmData.json', JSON.stringify(farmData, null, 2));
+        userReportMessages = {};
+        rankingMessageId = null;
+        rankingTimestamp = null;
+        lastFirstPlaceId = null;
+        lastCongratsMsgId = null;
     }
-} else {
-    farmData = { monthly: {}, total: {} };
 }
 
-// Funções utilitárias
+function saveData() {
+    const dataToSave = {
+        farmData,
+        userReportMessages,
+        rankingMessageId,
+        rankingTimestamp,
+        lastFirstPlaceId,
+        lastCongratsMsgId
+    };
+    fs.writeFileSync('./farmData.json', JSON.stringify(dataToSave, null, 2));
+}
+
 function formatNumber(num) {
     return num.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
+
 function formatValue(num) {
     if (num >= 2000000) return `${formatNumber(num)} MILHÕES`;
     if (num >= 1000000) return `${formatNumber(num)} MILHÃO`;
@@ -83,7 +111,6 @@ function formatValue(num) {
     return `${num}`;
 }
 
-// AQUI ESTÁ A FUNÇÃO parseMessage ATUALIZADA
 function parseMessage(content) {
     content = content.trim().toUpperCase();
     const valorRegex = /([\d\.]+)\s*(MIL|MILHAO|MILHÃO|MILHOES|MILHÕES)/i;
@@ -100,15 +127,12 @@ function parseMessage(content) {
 const golpeMatch = content.match(golpeRegex);
 
 if (golpeMatch) {
-    // Se grupo 1 existir, é Vicent
     if (golpeMatch[1]) golpe = golpeMatch[1].trim();
-    // Se grupo 2 existir, é golpe normal
     else if (golpeMatch[2]) golpe = golpeMatch[2].trim();
 } else if (content.includes("VICENT")) {
     golpe = "VICENT";
 }
 
-    // Se o golpe for "Vicent", atribui um valor temporÃ¡rio para que o script nÃ£o retorne
     if (normalizeText(golpe) === "VICENT" && valor === 0) {
         valor = 1;
     }
@@ -120,16 +144,11 @@ if (golpeMatch) {
     return { valor, golpe };
 }
 
-function saveData() {
-    fs.writeFileSync('./farmData.json', JSON.stringify(farmData, null, 2));
-}
-
 function initUserData(userId) {
     if (!farmData.monthly[userId]) farmData.monthly[userId] = { total: 0, golpes: {}, golpesCount: {}, apoiadores: {}, numGolpes: 0 };
     if (!farmData.total[userId]) farmData.total[userId] = { total: 0, numGolpes: 0, golpesCount: {} };
 }
 
-// Pergunta host pelas porcentagens
 async function askHostPercentages(message) {
     const mentions = Array.from(message.mentions.users.values()).slice(0, 3);
     if (mentions.length === 0) return;
@@ -152,7 +171,6 @@ async function askHostPercentages(message) {
     });
 }
 
-// Processa mensagens do canal (host publica o golpe)
 async function processMessage(message) {
     if (message.channel.id !== FARM_CHANNEL_ID) return;
     if (message.author.bot) return;
@@ -176,7 +194,6 @@ async function processMessage(message) {
     farmData.total[authorId].golpesCount[normalizedGolpe] += 1;
     farmData.total[authorId].numGolpes += 1;
 
-    // Vicent — Cluckin' Bell: cria botão modal
     if (normalizedGolpe === "VICENT") {
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
@@ -185,7 +202,7 @@ async function processMessage(message) {
                 .setStyle(ButtonStyle.Primary)
         );
         await message.reply({ content: `<@${authorId}>, clique para responder o questionário do golpe Vicent`, components: [row] });
-        return; // não pede porcentagem ou elite
+        return;
     }
 
     await askHostPercentages(message);
@@ -198,8 +215,6 @@ async function processMessage(message) {
 
 // ---------- Interações ----------
 client.on('interactionCreate', async (interaction) => {
-
-    // --- Modal específico para Vicent — Cluckin' Bell ---
     if (interaction.isButton() && interaction.customId.startsWith('vicentModalButton_')) {
         const messageId = interaction.customId.split('_')[1];
         const modal = new ModalBuilder()
@@ -219,7 +234,6 @@ client.on('interactionCreate', async (interaction) => {
         await interaction.showModal(modal);
     }
 
-    // --- Modal Submit para Vicent — Cluckin' Bell ---
     if (interaction.type === InteractionType.ModalSubmit && interaction.customId.startsWith('vicentModal_')) {
         const messageId = interaction.customId.split('_')[1];
         const message = await interaction.channel.messages.fetch(messageId).catch(() => null);
@@ -270,13 +284,9 @@ client.on('interactionCreate', async (interaction) => {
         saveData();
         return;
     }
-
 });
 
-// ---------- Interações ----------
 client.on('interactionCreate', async (interaction) => {
-
-    // abrir modal porcentagens
     if (interaction.isButton() && interaction.customId.startsWith('openModal_')) {
         const messageId = interaction.customId.split('_')[1];
         const message = await interaction.channel.messages.fetch(messageId).catch(() => null);
@@ -315,17 +325,15 @@ client.on('interactionCreate', async (interaction) => {
         await interaction.showModal(modal);
     }
 
-    // Modal de porcentagens (distribuição + bônus de elite)
     if (interaction.type === InteractionType.ModalSubmit && interaction.customId.startsWith('percentModal_')) {
         const messageId = interaction.customId.split('_')[1];
         const message = await interaction.channel.messages.fetch(messageId).catch(() => null);
         if (!message) return;
 
         const { valor, golpe } = parseMessage(message.content);
-        // Normaliza golpe antes de usar (CASSINO => CASSINO DIAMOND)
         const normalizedGolpe = normalizeText(golpe === "CASSINO" ? "CASSINO DIAMOND" : golpe);
 
-        const authorId = message.author.id; // o host original (quem publicou a mensagem)
+        const authorId = message.author.id;
         initUserData(authorId);
 
         const mentions = Array.from(message.mentions.users.values()).slice(0, 3);
@@ -333,7 +341,6 @@ client.on('interactionCreate', async (interaction) => {
 
         let totalDistribuido = 0;
 
-        // Distribui para apoiadores (não conta o host aqui)
         for (const user of mentions) {
             if (user.id === authorId) continue;
 
@@ -345,7 +352,6 @@ client.on('interactionCreate', async (interaction) => {
             farmData.monthly[user.id].total += userValor;
             farmData.total[user.id].total += userValor;
 
-            // incrementa golpe contado para o apoiador usando chave normalizada (apenas 1 vez)
             if (!farmData.monthly[user.id].golpesCount[normalizedGolpe]) farmData.monthly[user.id].golpesCount[normalizedGolpe] = 0;
             farmData.monthly[user.id].golpesCount[normalizedGolpe] += 1;
             farmData.monthly[user.id].numGolpes += 1;
@@ -354,25 +360,20 @@ client.on('interactionCreate', async (interaction) => {
             farmData.total[user.id].golpesCount[normalizedGolpe] += 1;
             farmData.total[user.id].numGolpes += 1;
 
-            // salva quanto o host deu pro apoiador
             farmData.monthly[authorId].apoiadores[user.id] = userValor;
         }
 
-        // Valor restante para host
         const valorHost = valor - totalDistribuido;
         farmData.monthly[authorId].total += valorHost;
         farmData.total[authorId].total += valorHost;
 
-        // armazena valor do golpe para o host usando chave normalizada (para consistência)
         if (!farmData.monthly[authorId].golpes) farmData.monthly[authorId].golpes = {};
         if (!farmData.monthly[authorId].golpes[normalizedGolpe]) farmData.monthly[authorId].golpes[normalizedGolpe] = 0;
         farmData.monthly[authorId].golpes[normalizedGolpe] += valorHost;
 
-        // --- Checa Elite ---
         const eliteInput = (interaction.fields.getTextInputValue('eliteBonus') || '').toLowerCase();
 
         if (eliteInput === 'sim') {
-            // Cayo Perico precisa de modal de modo
             if (normalizeText(golpe) === normalizeText("CAYO PERICO")) {
                 const row = new ActionRowBuilder().addComponents(
                     new ButtonBuilder()
@@ -383,7 +384,6 @@ client.on('interactionCreate', async (interaction) => {
                 await interaction.deferReply({ ephemeral: true });
                 await interaction.followUp({ content: '⚠️ **Clique para definir o modo do golpe e receber o bônus**.', components: [row], ephemeral: true });
             }
-            // Cassino (normalize) => bônus 50k
             else if (normalizedGolpe === normalizeText("CASSINO DIAMOND")) {
                 const participants = [...mentions];
                 if (!participants.find(u => u.id === authorId)) participants.push(await client.users.fetch(authorId));
@@ -392,12 +392,10 @@ client.on('interactionCreate', async (interaction) => {
                     initUserData(user.id);
                     farmData.monthly[user.id].total += 50000;
                     farmData.total[user.id].total += 50000;
-                    // NÃO incrementamos golpesCount aqui — apenas adicionamos bônus monetário
                 }
 
                 await interaction.reply({ content: '✅ ELITE FEITO! Bônus de 50000 aplicado para todos.', ephemeral: true });
             }
-            // Os novos golpes recebem 100k quando elite
             else {
                 const normalizedLista = [
                     normalizeText("ASSALTO AO BANCO FLEECA"),
@@ -414,12 +412,10 @@ client.on('interactionCreate', async (interaction) => {
                         initUserData(user.id);
                         farmData.monthly[user.id].total += 100000;
                         farmData.total[user.id].total += 100000;
-                        // NÃO incrementamos golpesCount aqui — apenas adicionamos bônus monetário
                     }
 
                     await interaction.reply({ content: '✅ ELITE FEITO! Bônus de 100000 aplicado para todos.', ephemeral: true });
                 } else {
-                    // golpe não na lista -> responde normalmente (sem bônus adicional)
                     await interaction.reply({ content: '✅ Valores aplicados sem bônus de elite ou golpe sem tratamento especial.', ephemeral: true });
                 }
             }
@@ -432,7 +428,6 @@ client.on('interactionCreate', async (interaction) => {
         saveData();
     }
 
-    // Botão para abrir modal de modo do golpe (Cayo Perico)
     if (interaction.isButton() && interaction.customId.startsWith('openModeModal_')) {
         const messageId = interaction.customId.split('_')[1];
         const modal = new ModalBuilder()
@@ -452,7 +447,6 @@ client.on('interactionCreate', async (interaction) => {
         await interaction.showModal(modal);
     }
 
-    // Modal de modo do golpe (Cayo Perico)
     if (interaction.type === InteractionType.ModalSubmit && interaction.customId.startsWith('modeModal_')) {
         const messageId = interaction.customId.split('_')[1];
         const message = await interaction.channel.messages.fetch(messageId).catch(() => null);
@@ -478,13 +472,7 @@ client.on('interactionCreate', async (interaction) => {
         if (reportChannel) await generateReport(reportChannel, true);
         saveData();
     }
-
-}); // <-- FECHA interactionCreate corretamente
-
-
-// ---------- Relatório e ranking editáveis ----------
-let lastFirstPlaceId = null;
-let lastCongratsMsgId = null;
+});
 
 async function generateReport(channel = null, teste = false) {
     const reportChannel = channel || await client.channels.fetch(REPORT_CHANNEL_ID).catch(() => null);
@@ -541,7 +529,6 @@ async function generateReport(channel = null, teste = false) {
         }
     }
 
-    // ---------- Ranking ----------
     let rankingArr = Object.entries(farmData.total)
         .map(([id, d]) => ({
             id,
@@ -574,36 +561,34 @@ async function generateReport(channel = null, teste = false) {
     rankingMessageId = rankingMsg.id;
     rankingTimestamp = Date.now();
 
-  // === NOVO TRECHO: PARABÉNS PRO 1º LUGAR ===
-  const congratsChannel = await client.channels.fetch("1392555751351914517").catch(() => null);
-  if (congratsChannel && rankingArr.length > 0) {
-    const first = rankingArr[0]; // primeiro colocado
-    if (first.id !== lastFirstPlaceId) {
-      // Apaga a última mensagem de parabéns, se existir
-      if (lastCongratsMsgId) {
-        const oldCongrats = await congratsChannel.messages.fetch(lastCongratsMsgId).catch(() => null);
-        if (oldCongrats) await oldCongrats.delete().catch(() => null);
-      }
+    const congratsChannel = await client.channels.fetch("1392555751351914517").catch(() => null);
+    if (congratsChannel && rankingArr.length > 0) {
+        const first = rankingArr[0];
+        if (first.id !== lastFirstPlaceId) {
+            if (lastCongratsMsgId) {
+                const oldCongrats = await congratsChannel.messages.fetch(lastCongratsMsgId).catch(() => null);
+                if (oldCongrats) await oldCongrats.delete().catch(() => null);
+            }
 
-      const user = await client.users.fetch(first.id).catch(() => null);
-      if (user) {
-        const congratsEmbed = new EmbedBuilder()
-          .setTitle("<:medal261:1410341499031257313> NOVO LÍDER NO RANKING DE VALORES!")
-          .setDescription(`<a:confetiss:1410158284001771530> Parabéns! <@${first.id}> **conquistou o primeiro lugar** no ranking de valores da comunidade, **${formatValue(first.total)}.** <a:moneybag:1405178051935076392>`)
-          .setColor("#FFEC00")
-          .setThumbnail(user.displayAvatarURL({ dynamic: true }));
+            const user = await client.users.fetch(first.id).catch(() => null);
+            if (user) {
+                const congratsEmbed = new EmbedBuilder()
+                    .setTitle("<:medal261:1410341499031257313> NOVO LÍDER NO RANKING DE VALORES!")
+                    .setDescription(`<a:confetiss:1410158284001771530> Parabéns! <@${first.id}> **conquistou o primeiro lugar** no ranking de valores da comunidade, **${formatValue(first.total)}.** <a:moneybag:1405178051935076392>`)
+                    .setColor("#FFEC00")
+                    .setThumbnail(user.displayAvatarURL({ dynamic: true }));
 
-        const congratsMsg = await congratsChannel.send({ embeds: [congratsEmbed] });
-        lastCongratsMsgId = congratsMsg.id;
-        lastFirstPlaceId = first.id;
-      }
+                const congratsMsg = await congratsChannel.send({ embeds: [congratsEmbed] });
+                lastCongratsMsgId = congratsMsg.id;
+                lastFirstPlaceId = first.id;
+            }
+        }
     }
-  }
 
-  if (!teste) saveData();
+    if (!teste) saveData();
 }
 
-// Eventos de mensagem
+// Eventos
 client.on('messageCreate', async (message) => {
     const content = message.content.toLowerCase();
     if (content.startsWith('!relatório')) {
@@ -614,11 +599,11 @@ client.on('messageCreate', async (message) => {
     }
 });
 
-// Evento de inicialização do bot
 client.on('ready', () => {
     console.log(`✅ Bot logado como ${client.user.tag}!`);
+    loadData(); // Carrega os dados ao iniciar
 
-    const channelId = "1377721036044505098"; // canal de boas-vindas
+    const channelId = "1377721036044505098";
     const channel = client.channels.cache.get(channelId);
 
     if (channel) {
@@ -648,9 +633,9 @@ cron.schedule('53 11 * * 0', async () => {
 });
 
 // --- Cron job: apagar ranking após 2 meses ---
-cron.schedule('0 0 * * *', async () => { // verifica diariamente à  meia-noite
+cron.schedule('0 0 * * *', async () => {
     if (!rankingTimestamp) return;
-    const twoMonths = 60 * 24 * 60 * 60 * 1000; // 60 dias em ms
+    const twoMonths = 60 * 24 * 60 * 60 * 1000;
     if (Date.now() - rankingTimestamp > twoMonths) {
         const reportChannel = await client.channels.fetch(REPORT_CHANNEL_ID).catch(() => null);
         if (!reportChannel) return;
@@ -663,7 +648,6 @@ cron.schedule('0 0 * * *', async () => { // verifica diariamente à  meia-noite
     }
 });
 
-// --- Servidor HTTP para UptimeRobot ---
 const express = require('express');
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -676,7 +660,4 @@ app.listen(PORT, () => {
     console.log(`🌐 Servidor de uptime rodando na porta ${PORT}`);
 });
 
-// --- Faz login do bot no Discord ---
 client.login(DISCORD_TOKEN);
-
-
