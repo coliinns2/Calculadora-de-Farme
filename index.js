@@ -618,7 +618,7 @@ client.on('ready', () => {
 });
 
 // --- Cron job: apagar relatórios semanais todo domingo às 19h ---
-cron.schedule('46 12 * * 0', async () => {
+cron.schedule('54 12 * * 0', async () => {
     const reportChannel = await client.channels.fetch(REPORT_CHANNEL_ID).catch(() => null);
     if (!reportChannel) return;
 
@@ -661,5 +661,6 @@ app.listen(PORT, () => {
 });
 
 client.login(DISCORD_TOKEN);
+
 
 
